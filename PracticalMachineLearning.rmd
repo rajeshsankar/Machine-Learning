@@ -1,0 +1,178 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "by Rajesh Sankar"
+output:
+  pdf_document:
+    fig_height: 7
+    fig_width: 7
+---
+
+## Practical Machine Learning Course Project
+
+### Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.
+
+### Goal
+The goal of this project is to predict the manner in which the they did the exercise by using the data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways:
+- Class A: exactly according to the specification
+- Class B: throwing the elbows to the front
+- Class C: lifting the dumbbell only halfway
+- Class D: lowering the dumbbell only halfway
+- Class E: throwing the hips to the front
+
+### Datasource
+The training and test data for this project were obtained from:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+### Reproducibility
+Set the working directory.
+```{r}
+setwd("C:/Users/Pragati/Documents/bd/wd")
+```
+
+Load Libraries
+```{r}
+# Libraries
+library(caret)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+library(ggplot2)
+library(lattice)
+library(rattle)
+``` 
+
+Load the training and test datasets.
+```{r}
+urlTraining <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+urlTest <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+dataTrain <- read.csv(url(urlTraining), header=TRUE, sep=",", na.strings=c("NA","#DIV/0!",""))
+dataTest <- read.csv(url(urlTest), header=TRUE, sep=",", na.strings=c("NA","#DIV/0!",""))
+```
+
+### Data Cleansing
+First, we analyse the raw data and cleanse the data as much as possible to have a dataset which we actually need for this analysis.
+
+#### Inspect Data
+Data is first inspected using R functions like summary, str and dim. Due to the detailed output produced by these functions, we just list the commands here in this report.
+
+summary(dataTrain)
+summary(dataTest)
+str(dataTrain)
+str(dataTest)
+dim(dataTrain)
+dim(dataTest)
+
+#### Filter unwanted columns
+In the dataset, the first few columns - UserName, TimeStamp columns, Window columns are really not needed for this analysis. Let's remove them from our dataset.
+
+```{r}
+dataTrain <- dataTrain[,-seq(1:7)]
+dataTest <- dataTest[,-seq(1:7)]
+```
+
+#### Filter NA columns
+There are a lot of NA values present in the dataset. These data should be removed.
+
+```{r}
+fnRemoveNA <- as.vector(sapply(dataTrain[,1:152],function(x) {length(which(is.na(x)))!=0}))
+dataTrain <- dataTrain[,!fnRemoveNA]
+fnRemoveNA <- as.vector(sapply(dataTest[,1:152],function(x) {length(which(is.na(x)))!=0}))
+dataTest <- dataTest[,!fnRemoveNA]
+```
+
+#### Correlation Analysis
+Many variables in the dataset are highly correlated. These variables reduce the performance of any model and should be excluded from the dataset.
+
+```{r}
+HcorrTrain <- caret::findCorrelation(cor(dataTrain[, -53]), cutoff=0.9)
+names(dataTrain)[HcorrTrain]
+```
+
+Final variables selected for our model are:
+```{r}
+dataTrain <- dataTrain[, -HcorrTrain]
+dataTest <- dataTest[, -HcorrTrain]
+names(dataTrain)
+names(dataTest)
+```
+
+### Cross Validation Set
+Create training and test set
+
+```{r}
+inTrain <- createDataPartition(y=dataTrain$classe, p=0.7, list=FALSE )
+setTrain <- dataTrain[inTrain,]
+setTest <- dataTrain[-inTrain,]
+```
+
+### Model Specification
+Random Forest and Decision Tree models are created and analysed here.
+
+Set seed and get the best mtry
+```{r}
+#Set seed
+set.seed(12345)
+
+# get the best mtry
+bestmtry <- tuneRF(setTrain[-as.numeric(ncol(dataTrain))],setTrain$classe, ntreeTry=100, 
+                   stepFactor=1.5,improve=0.01, trace=TRUE, plot=TRUE, dobest=FALSE)
+
+mtry <- bestmtry[as.numeric(which.min(bestmtry[,"OOBError"])),"mtry"]				   
+```
+
+#### Model-1: Random Forest
+We will use the tuneRF function to calculate the optimal mtry and use that in the random forest function.
+
+```{r}
+train.rf <-randomForest(classe~.,data=dataTrain, mtry=mtry, ntree=501, 
+                      keep.forest=TRUE, proximity=TRUE, 
+                      importance=TRUE,test=setTest)
+```
+
+Out-Of-Bag (OOB) error rate per Number of Trees is calculated here.
+```{r}
+layout(matrix(c(1,2),nrow=1), width=c(4,1)) 
+par(mar=c(5,4,4,0)) 
+plot(train.rf, log="y", main ="Out-of-bag (OOB) error")
+par(mar=c(5,0,4,2)) 
+plot(c(0,1),type="n", axes=F, xlab="", ylab="")
+legend("top", colnames(train.rf$err.rate),col=1:6,cex=0.8,fill=1:6)
+```
+
+#### Accuracy for Random Forest Model
+Here, we predict the training and test dataset for model 1.
+
+```{r}
+# Predict Training set
+predictTrain <- predict(train.rf, newdata=setTrain)
+confusionMatrix(predictTrain,setTrain$classe)
+
+
+# Predict Test set
+predictTest <- predict(train.rf, newdata=setTest)
+confusionMatrix(predictTest,setTrain$classe)
+```
+
+#### Model-2: Decision Tree Model
+Here is the decision tree model for the datasets.
+
+```{r}
+dtTrain <- rpart(classe ~ ., data=setTrain, method="class")
+```
+
+#### Accuracy for Decision Tree Model
+Here, we predict the training and test dataset for model 2.
+
+```{r}
+# Predict Training set
+predictDTTrain <- predict(dtTrain, setTrain, type = "class")
+confusionMatrix(predictDTTrain,setTrain$classe)
+
+
+# Predict Test set
+predictTest <- predict(train.rf, newdata=setTest)
+confusionMatrix(predictTest,setTrain$classe)
+```
