@@ -28,7 +28,7 @@ https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
 ### Reproducibility
 Set the working directory.
 ```{r}
-setwd("C:/Users/Pragati/Documents/bd/wd")
+setwd("C:/bd/coursera/wd/ml")
 ```
 
 Load Libraries
@@ -176,3 +176,5 @@ confusionMatrix(predictDTTrain,setTrain$classe)
 predictTest <- predict(train.rf, newdata=setTest)
 confusionMatrix(predictTest,setTrain$classe)
 ```
+
+predictionsB2 <- predict(predictTest, setTest, type = "class")
